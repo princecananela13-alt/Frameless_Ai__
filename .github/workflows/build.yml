@@ -1,20 +1,66 @@
-name: Build Frameless_Ai
-on: workflow_dispatch
+
+name: Build Frameless APK
+
+on:
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - run: unzip -q Frameless_Ai_source.zip
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: '8.9' }
-      - run: gradle assembleRelease --no-daemon
-        working-directory: Frameless_Ai
-      - run: cp app/build/outputs/apk/release/app-release.apk Frameless_Ai.apk
-        working-directory: Frameless_Ai
-      - uses: actions/upload-artifact@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate and extract source ZIP
+        shell: bash
+        run: |
+          set -e
+          ZIP="$(find . -maxdepth 2 -type f -name 'FramelessPanel-source-compact-left-scroll.zip' | head -n 1)"
+          if [ -z "$ZIP" ]; then
+            echo "Source ZIP not found"
+            exit 1
+          fi
+          mkdir -p source
+          unzip -q "$ZIP" -d source
+          echo "Extracted source files:"
+          find source -maxdepth 4 -type f | head -n 100
+
+      - name: Find Gradle project
+        shell: bash
+        run: |
+          set -e
+          SETTINGS="$(find source -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)"
+          if [ -z "$SETTINGS" ]; then
+            echo "No settings.gradle found in ZIP"
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project at $PROJECT_DIR"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          name: Frameless_Ai
-          path: Frameless_Ai/Frameless_Ai.apk
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frameless-debug-apk
+          path: source/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          
